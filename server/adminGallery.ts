@@ -11,6 +11,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { optimizeGalleryPhoto, type PhotoItem } from "../shared/galleryPhotos";
 import {
   addGalleryPhoto,
+  getGalleryPhotoStorageInfo,
   listGalleryPhotos,
   removeGalleryPhoto,
   setIntroGalleryPhotos,
@@ -23,7 +24,7 @@ import {
   setLocalIntroPhotos,
   updateLocalGalleryPhoto,
 } from "./localGallery";
-import { storagePut } from "./storage";
+import { storagePut, deleteLocalUpload } from "./storage";
 import { MAX_INTRO_PHOTOS, MIN_INTRO_PHOTOS } from "../shared/galleryPhotos";
 
 const SESSION_COOKIE = "jf_admin_session";
@@ -479,7 +480,12 @@ export function registerAdminGalleryRoutes(app: Express) {
               : undefined
           );
         } else {
+          const previousPhoto = upload
+            ? await getGalleryPhotoStorageInfo(id)
+            : undefined;
+
           let storedImage: { key: string; url: string } | undefined;
+
           if (upload) {
             storedImage = await storagePut(
               `gallery/${randomUUID()}.${upload.type.extension}`,
@@ -487,13 +493,37 @@ export function registerAdminGalleryRoutes(app: Express) {
               upload.type.contentType
             );
           }
-          updated = await updateGalleryPhoto(id, {
-            ...metadata,
-            ...(storedImage
-              ? { src: storedImage.url, storageKey: storedImage.key }
-              : {}),
-          });
+
+          try {
+            updated = await updateGalleryPhoto(id, {
+              ...metadata,
+              ...(storedImage
+                ? { src: storedImage.url, storageKey: storedImage.key }
+                : {}),
+            });
+          } catch (error) {
+            if (storedImage) {
+              await deleteLocalUpload(storedImage.key).catch(console.error);
+            }
+            throw error;
+          }
+
+          if (storedImage && !updated) {
+            await deleteLocalUpload(storedImage.key).catch(console.error);
+          }
+
+          if (
+            storedImage &&
+            updated &&
+            previousPhoto?.src?.startsWith("/uploads/") &&
+            previousPhoto.storageKey
+          ) {
+            await deleteLocalUpload(previousPhoto.storageKey).catch((error) =>
+              console.error("Could not delete previous gallery upload:", error)
+            );
+          }
         }
+
         if (!updated) {
           res
             .status(404)
@@ -518,9 +548,23 @@ export function registerAdminGalleryRoutes(app: Express) {
       return;
     }
     try {
-      const result = isLocalGalleryMode()
-        ? await removeLocalGalleryPhoto(id)
-        : await removeGalleryPhoto(id);
+      const previousPhoto = isLocalGalleryMode()
+  ? undefined
+  : await getGalleryPhotoStorageInfo(id);
+
+const result = isLocalGalleryMode()
+  ? await removeLocalGalleryPhoto(id)
+  : await removeGalleryPhoto(id);
+
+if (
+  result === "removed" &&
+  previousPhoto?.src?.startsWith("/uploads/") &&
+  previousPhoto.storageKey
+) {
+  await deleteLocalUpload(previousPhoto.storageKey).catch((error) =>
+    console.error("Could not delete previous gallery upload:", error)
+  );
+}
       if (result === "not-found") {
         res
           .status(404)

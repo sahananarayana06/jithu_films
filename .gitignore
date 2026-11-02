@@ -22,9 +22,6 @@ build/
 .env.*
 !.env.example
 
-# Manus debugging and generated files
-.manus-logs/
-client/public/__manus__/
 
 # Webdev generated artifacts
 .webdev/
