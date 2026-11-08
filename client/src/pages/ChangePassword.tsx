@@ -72,64 +72,68 @@ export default function ChangePassword() {
         <h1>Change your password.</h1>
         <p>Enter your current credentials and choose a new password.</p>
 
+        
         <form className="admin-form" onSubmit={changePassword}>
-          <label>
+        <div className="admin-fields">
+            <label className="admin-field admin-field--wide">
             Username
             <input
-              type="text"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              autoComplete="username"
-              required
+                type="text"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                autoComplete="username"
+                required
             />
-          </label>
+            </label>
 
-          <label>
+            <label className="admin-field admin-field--wide">
             Current Password
             <input
-              type="password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-              autoComplete="current-password"
-              required
+                type="password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                autoComplete="current-password"
+                required
             />
-          </label>
+            </label>
 
-          <label>
-            New Password
+            <label className="admin-field admin-field--wide">
+            New Password (minimum 12 characters)
             <input
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              autoComplete="new-password"
-              minLength={12}
-              required
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                autoComplete="new-password"
+                minLength={12}
+                required
             />
-          </label>
+            </label>
 
-          <label>
+            <label className="admin-field admin-field--wide">
             Confirm New Password
             <input
-              type="password"
-              value={confirmNewPassword}
-              onChange={(event) => setConfirmNewPassword(event.target.value)}
-              autoComplete="new-password"
-              minLength={12}
-              required
+                type="password"
+                value={confirmNewPassword}
+                onChange={(event) => setConfirmNewPassword(event.target.value)}
+                autoComplete="new-password"
+                minLength={12}
+                required
             />
-          </label>
+            </label>
+        </div>
 
-          {error && <p className="admin-message admin-message--error">{error}</p>}
-          {notice && <p className="admin-message admin-message--success">{notice}</p>}
+        {error && <p className="admin-message admin-message--error">{error}</p>}
+        {notice && <p className="admin-message admin-message--success">{notice}</p>}
 
-          <button
+        <button
             className="button button--dark"
             type="submit"
             disabled={busy}
-          >
+        >
             {busy ? "Updating..." : "Update Password"}
-          </button>
+        </button>
         </form>
+
       </section>
     </main>
   );
