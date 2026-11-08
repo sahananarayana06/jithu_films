@@ -115,15 +115,11 @@ export default function AdminGallery() {
   const [editingPhoto, setEditingPhoto] = useState<AdminPhoto | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [showChangePassword, setShowChangePassword] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  
   useEffect(() => {
     let active = true;
     fetch("/api/admin/logout", {
@@ -227,53 +223,6 @@ export default function AdminGallery() {
     }
   };
 
-    const changePassword = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError("");
-    setNotice("");
-
-    if (newPassword !== confirmNewPassword) {
-      setError("The new passwords do not match.");
-      return;
-    }
-
-    if (newPassword.length < 12) {
-      setError("New password must contain at least 12 characters.");
-      return;
-    }
-
-    setBusy(true);
-
-    try {
-      const result = await responseBody(
-        await fetch("/api/admin/change-password", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username,
-            currentPassword,
-            newPassword,
-          }),
-        })
-      );
-
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmNewPassword("");
-      setPassword("");
-      setShowChangePassword(false);
-      setNotice("Password changed successfully. Please sign in again.");
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not change the password."
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
   const savePhoto = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
@@ -525,75 +474,23 @@ export default function AdminGallery() {
                 onChange={event => setPassword(event.target.value)}
               />
             </label>
-            <button
-              className="button button--dark"
-              type="submit"
-              disabled={busy || !configured}
-            >
-              {busy ? "Signing in…" : "Sign in"}
-            </button>
+            <div className="admin-login-actions">
+              <button
+                className="button button--dark"
+                type="submit"
+                disabled={busy || !configured}
+              >
+                {busy ? "Signing in…" : "Sign in"}
+              </button>
+
+              <a
+                className="admin-change-password-link"
+                href="/admin/change-password"
+              >
+                Change Password
+              </a>
+            </div>
           </form>
-          <button
-  className="admin-change-password-link"
-  type="button"
-  onClick={() => {
-    setShowChangePassword(!showChangePassword);
-    setError("");
-    setNotice("");
-  }}
-  disabled={busy || !configured}
->
-  {showChangePassword ? "Cancel Change Password" : "Change Password"}
-</button>
-
-{showChangePassword && (
-  <form className="admin-form" onSubmit={changePassword}>
-    <h2>Change your password</h2>
-
-    <label className="admin-field">
-      <span>Current Password</span>
-      <input
-        type="password"
-        autoComplete="current-password"
-        required
-        value={currentPassword}
-        onChange={event => setCurrentPassword(event.target.value)}
-      />
-    </label>
-
-    <label className="admin-field">
-      <span>New Password (minimum 12 characters)</span>
-      <input
-        type="password"
-        autoComplete="new-password"
-        minLength={12}
-        required
-        value={newPassword}
-        onChange={event => setNewPassword(event.target.value)}
-      />
-    </label>
-
-    <label className="admin-field">
-      <span>Confirm New Password</span>
-      <input
-        type="password"
-        autoComplete="new-password"
-        minLength={12}
-        required
-        value={confirmNewPassword}
-        onChange={event => setConfirmNewPassword(event.target.value)}
-      />
-    </label>
-
-    <button
-      className="button button--dark"
-      type="submit"
-      disabled={busy || !configured}
-    >
-      {busy ? "Changing Password…" : "Save New Password"}
-    </button>
-  </form>
-)}
           {error && (
             <p className="admin-message admin-message--error" role="alert">
               {error}

@@ -3174,10 +3174,20 @@ h2 {
     transition: none;
   }
 }
+
+.admin-login-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
 .admin-change-password-link {
   display: inline-block;
   width: auto;
-  margin-top: 14px;
+  margin-top: 0;
   padding: 0;
   border: none;
   background: transparent;
@@ -3187,13 +3197,9 @@ h2 {
   text-decoration: underline;
   text-underline-offset: 4px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.admin-change-password-link:hover:not(:disabled) {
+.admin-change-password-link:hover {
   color: var(--ink);
-}
-
-.admin-change-password-link:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
