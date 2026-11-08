@@ -389,7 +389,7 @@ export function registerAdminGalleryRoutes(app: Express) {
 
   app.get("/api/admin/session", async (req, res) => {
     res.set("Cache-Control", "no-store").json({
-      aauthenticated: (await isAdminConfigured()) && (await isAuthenticated(req)),
+      authenticated: (await isAdminConfigured()) && (await isAuthenticated(req)),
 configured: await isAdminConfigured(),
     });
   });
