@@ -1,4 +1,11 @@
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  scryptSync,
+  timingSafeEqual,
+} from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import {
   raw,
   type Express,
@@ -48,15 +55,24 @@ function sessionKey() {
     : null;
 }
 
-function isAdminConfigured() {
-  return Boolean(
-    process.env.ADMIN_USERNAME &&
-      process.env.ADMIN_USERNAME.length <= 128 &&
-      process.env.ADMIN_PASSWORD &&
-      process.env.ADMIN_PASSWORD.length >= 12 &&
-      process.env.ADMIN_PASSWORD.length <= 1024 &&
-      sessionKey()
-  );
+async function isAdminConfigured() {
+  if (
+    !process.env.ADMIN_USERNAME ||
+    process.env.ADMIN_USERNAME.length > 128 ||
+    !process.env.ADMIN_PASSWORD ||
+    process.env.ADMIN_PASSWORD.length < 12 ||
+    process.env.ADMIN_PASSWORD.length > 1024 ||
+    !sessionKey()
+  ) {
+    return false;
+  }
+
+  try {
+    await readAdminPasswordRecord();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function cookieOptions() {
@@ -85,7 +101,84 @@ function constantTimeEqual(left: string, right: string) {
   const rightHash = createHash("sha256").update(right).digest();
   return timingSafeEqual(leftHash, rightHash);
 }
+const ADMIN_AUTH_FILE = "/var/lib/jithufilms/admin-auth.json";
 
+type AdminPasswordRecord = {
+  salt: string;
+  hash: string;
+  updatedAt: number;
+};
+
+async function readAdminPasswordRecord(): Promise<AdminPasswordRecord | null> {
+  try {
+    const contents = await readFile(ADMIN_AUTH_FILE, "utf8");
+    const record = JSON.parse(contents) as Partial<AdminPasswordRecord>;
+
+    if (
+      typeof record.salt !== "string" ||
+      !/^[a-f0-9]{32}$/i.test(record.salt) ||
+      typeof record.hash !== "string" ||
+      !/^[a-f0-9]{128}$/i.test(record.hash)
+    ) {
+      throw new Error("Stored admin password record is invalid.");
+    }
+
+    if (
+  typeof record.updatedAt !== "number" ||
+  !Number.isSafeInteger(record.updatedAt) ||
+  record.updatedAt <= 0
+) {
+  throw new Error("Stored admin password timestamp is invalid.");
+}
+
+return {
+  salt: record.salt,
+  hash: record.hash,
+  updatedAt: record.updatedAt,
+};
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function verifyAdminPassword(password: string): Promise<boolean> {
+  const record = await readAdminPasswordRecord();
+
+  if (!record) {
+    return Boolean(
+      process.env.ADMIN_PASSWORD &&
+        constantTimeEqual(password, process.env.ADMIN_PASSWORD)
+    );
+  }
+
+  const suppliedHash = scryptSync(password, record.salt, 64);
+  const storedHash = Buffer.from(record.hash, "hex");
+
+  return timingSafeEqual(suppliedHash, storedHash);
+}
+
+async function saveAdminPassword(password: string): Promise<void> {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 64).toString("hex");
+
+  await mkdir("/var/lib/jithufilms", {
+    recursive: true,
+    mode: 0o700,
+  });
+
+  const temporaryFile = `${ADMIN_AUTH_FILE}.${randomUUID()}.tmp`;
+
+  await writeFile(
+    temporaryFile,
+    JSON.stringify({ salt, hash, updatedAt: Date.now() }),
+    { encoding: "utf8", mode: 0o600, flag: "wx" }
+  );
+
+  await rename(temporaryFile, ADMIN_AUTH_FILE);
+}
 function isRateLimited(req: Request) {
   const now = Date.now();
   for (const [ip, attempt] of loginAttempts) {
@@ -111,21 +204,36 @@ function clearLoginAttempts(req: Request) {
 async function isAuthenticated(req: Request) {
   const key = sessionKey();
   if (!key) return false;
+
   try {
     const token = parseCookieHeader(req.headers.cookie ?? "")[SESSION_COOKIE];
     if (!token) return false;
+
     const { payload } = await jwtVerify(token, key, {
       algorithms: ["HS256"],
       issuer: "jithu-films-admin",
     });
-    return payload.sub === "admin";
+
+    if (payload.sub !== "admin" || typeof payload.iat !== "number") {
+      return false;
+    }
+
+    const record = await readAdminPasswordRecord();
+
+    if (
+      record &&
+      payload.iat < Math.ceil(record.updatedAt / 1000)
+    ) {
+      return false;
+    }
+
+    return true;
   } catch {
     return false;
   }
 }
-
 async function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!isAdminConfigured()) {
+  if (!(await isAdminConfigured())) {
     res.status(503).json({
       message: "Admin sign-in is not configured on the server.",
     });
@@ -281,8 +389,8 @@ export function registerAdminGalleryRoutes(app: Express) {
 
   app.get("/api/admin/session", async (req, res) => {
     res.set("Cache-Control", "no-store").json({
-      authenticated: isAdminConfigured() && (await isAuthenticated(req)),
-      configured: isAdminConfigured(),
+      aauthenticated: (await isAdminConfigured()) && (await isAuthenticated(req)),
+configured: await isAdminConfigured(),
     });
   });
 
@@ -291,7 +399,7 @@ export function registerAdminGalleryRoutes(app: Express) {
       res.status(403).json({ message: "Sign-in request was rejected." });
       return;
     }
-    if (!isAdminConfigured()) {
+    if (!(await isAdminConfigured())) {
       res.status(503).json({
         message:
           "Set ADMIN_USERNAME, ADMIN_PASSWORD (at least 12 characters), and ADMIN_SESSION_SECRET (at least 32 characters) on the server.",
@@ -307,19 +415,19 @@ export function registerAdminGalleryRoutes(app: Express) {
     }
 
     const { username, password } = req.body ?? {};
-    if (
-      typeof username !== "string" ||
-      typeof password !== "string" ||
-      username.length > 128 ||
-      password.length > 1024 ||
-      !constantTimeEqual(username, process.env.ADMIN_USERNAME!) ||
-      !constantTimeEqual(password, process.env.ADMIN_PASSWORD!)
-    ) {
-      res
-        .status(401)
-        .json({ message: "The username or password is incorrect." });
-      return;
-    }
+if (
+  typeof username !== "string" ||
+  typeof password !== "string" ||
+  username.length > 128 ||
+  password.length > 1024 ||
+  !constantTimeEqual(username, process.env.ADMIN_USERNAME!) ||
+  !(await verifyAdminPassword(password))
+) {
+  res
+    .status(401)
+    .json({ message: "The username or password is incorrect." });
+  return;
+}
 
     clearLoginAttempts(req);
     const key = sessionKey();
@@ -340,7 +448,54 @@ export function registerAdminGalleryRoutes(app: Express) {
       .cookie(SESSION_COOKIE, token, cookieOptions())
       .json({ authenticated: true });
   });
+  app.post("/api/admin/change-password", async (req, res) => {
+    if (!hasSameOrigin(req)) {
+      res.status(403).json({ message: "Password change request was rejected." });
+      return;
+    }
 
+    if (!(await isAdminConfigured())) {
+      res.status(503).json({ message: "Admin sign-in is not configured." });
+      return;
+    }
+
+    if (isRateLimited(req)) {
+      res.status(429).json({
+        message: "Too many attempts. Please try again in 15 minutes.",
+      });
+      return;
+    }
+
+    const { username, currentPassword, newPassword } = req.body ?? {};
+
+    if (
+      typeof username !== "string" ||
+      typeof currentPassword !== "string" ||
+      typeof newPassword !== "string" ||
+      username.length > 128 ||
+      currentPassword.length > 1024 ||
+      newPassword.length < 12 ||
+      newPassword.length > 1024 ||
+      !constantTimeEqual(username, process.env.ADMIN_USERNAME!) ||
+      !(await verifyAdminPassword(currentPassword))
+    ) {
+      res.status(401).json({
+        message: "Username or current password is incorrect, or the new password is invalid.",
+      });
+      return;
+    }
+
+    try {
+      await saveAdminPassword(newPassword);
+      clearLoginAttempts(req);
+      res.set("Cache-Control", "no-store").json({
+        message: "Password changed successfully. Please sign in with your new password.",
+      });
+    } catch {
+      res.status(500).json({ message: "Could not save the new password." });
+    }
+  });
+  
   app.post("/api/admin/logout", (req, res) => {
     if (!hasSameOrigin(req)) {
       res.status(403).json({ message: "Sign-out request was rejected." });
