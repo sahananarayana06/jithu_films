@@ -534,7 +534,7 @@ export default function AdminGallery() {
             </button>
           </form>
           <button
-  className="button button--dark"
+  className="admin-change-password-link"
   type="button"
   onClick={() => {
     setShowChangePassword(!showChangePassword);

@@ -3174,3 +3174,26 @@ h2 {
     transition: none;
   }
 }
+.admin-change-password-link {
+  display: inline-block;
+  width: auto;
+  margin-top: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.admin-change-password-link:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.admin-change-password-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
